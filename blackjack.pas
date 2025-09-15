@@ -1,115 +1,100 @@
+{$mode objfpc}
+{$H+}
 program BlackJack;
 
 uses
   SysUtils;
 
 type
-  // -------- Classe Carte --------
   TCarte = class
   private
     FValeur: string;
     FCouleur: string;
   public
-    constructor Create(AValeur, ACouleur: string);
-    function GetValeur: string;
-    function GetCouleur: string;
-    function GetValeurNumerique: Integer;
-    function ToString: string; override;
+    constructor Create(const AValeur, ACouleur: string);
+    function ValeurNumerique: Integer;
+    function AsString: string;
   end;
 
-  // -------- Classe Joueur --------
   TJoueur = class
   private
     FScore: Integer;
-    FJeton: Integer;
-    FCarte: Integer;
+    FJetons: Integer;
+    FCartes: Integer;
   public
-    constructor Create(AScore, AJeton, ACarte: Integer);
+    constructor Create(AScore, AJetons, ACartes: Integer);
     property Score: Integer read FScore write FScore;
-    property Jeton: Integer read FJeton write FJeton;
-    property Carte: Integer read FCarte write FCarte;
-    function ToString: string; override;
+    property Jetons: Integer read FJetons write FJetons;
+    property Cartes: Integer read FCartes write FCartes;
+    function AsString: string;
   end;
 
-  // -------- Classe Croupier --------
   TCroupier = class
   private
     FScore: Integer;
-    FCarte: Integer;
+    FCartes: Integer;
   public
-    constructor Create(AScore, ACarte: Integer);
+    constructor Create(AScore, ACartes: Integer);
     property Score: Integer read FScore write FScore;
-    property Carte: Integer read FCarte write FCarte;
-    function ToString: string; override;
+    property Cartes: Integer read FCartes write FCartes;
+    function AsString: string;
   end;
 
-  // -------- Classe Game --------
   TGame = class
   private
     FPot: Integer;
   public
     constructor Create;
     property Pot: Integer read FPot write FPot;
-    function ToString: string; override;
+    function AsString: string;
   end;
 
-  // -------- Tableau de cartes --------
-  TCardArray = array of TCarte;
+  TDeck = array of TCarte;
 
-{ ==== Implémentations ==== }
+{ --- Implémentations --- }
 
-constructor TCarte.Create(AValeur, ACouleur: string);
+constructor TCarte.Create(const AValeur, ACouleur: string);
 begin
   FValeur := AValeur;
   FCouleur := ACouleur;
 end;
 
-function TCarte.GetValeur: string;
-begin
-  Result := FValeur;
-end;
-
-function TCarte.GetCouleur: string;
-begin
-  Result := FCouleur;
-end;
-
-function TCarte.GetValeurNumerique: Integer;
+function TCarte.ValeurNumerique: Integer;
 begin
   if FValeur = 'As' then
     Result := 11
   else if (FValeur = 'Valet') or (FValeur = 'Dame') or (FValeur = 'Roi') or (FValeur = '10') then
     Result := 10
   else
-    Result := StrToInt(FValeur);
+    Result := StrToIntDef(FValeur, 0);
 end;
 
-function TCarte.ToString: string;
+function TCarte.AsString: string;
 begin
   Result := FValeur + ' de ' + FCouleur;
 end;
 
-constructor TJoueur.Create(AScore, AJeton, ACarte: Integer);
+constructor TJoueur.Create(AScore, AJetons, ACartes: Integer);
 begin
   FScore := AScore;
-  FJeton := AJeton;
-  FCarte := ACarte;
+  FJetons := AJetons;
+  FCartes := ACartes;
 end;
 
-function TJoueur.ToString: string;
+function TJoueur.AsString: string;
 begin
-  Result := Format('Joueur [score = %d, jetons restants = %d, cartes = %d]', [FScore, FJeton, FCarte]);
+  Result := Format('Joueur [score = %d, jetons restants = %d, cartes = %d]', [FScore, FJetons, FCartes]);
 end;
 
-constructor TCroupier.Create(AScore, ACarte: Integer);
+constructor TCroupier.Create(AScore, ACartes: Integer);
 begin
   FScore := AScore;
-  FCarte := ACarte;
+  FCartes := ACartes;
 end;
 
-function TCroupier.ToString: string;
+function TCroupier.AsString: string;
 begin
-  Result := Format('Croupier [score = %d, carte = %d]', [FScore, FCarte]);
+  Result := Format('Croupier [score = %d, carte = %d]', [FScore, FCartes]);
 end;
 
 constructor TGame.Create;
@@ -117,39 +102,65 @@ begin
   FPot := 0;
 end;
 
-function TGame.ToString: string;
+function TGame.AsString: string;
 begin
   Result := Format('Mise de la partie [%d]', [FPot]);
 end;
 
-{ ==== Shuffle helper ==== }
-procedure Shuffle(var Cards: TCardArray);
+{ Shuffle Fisher–Yates }
+procedure Shuffle(var D: TDeck);
 var
   i, j: Integer;
-  temp: TCarte;
+  tmp: TCarte;
 begin
-  for i := High(Cards) downto Low(Cards) do
+  if Length(D) <= 1 then Exit;
+  for i := High(D) downto 1 do
   begin
-    j := Random(Length(Cards));
-    temp := Cards[i];
-    Cards[i] := Cards[j];
-    Cards[j] := temp;
+    j := Random(i + 1);
+    tmp := D[i];
+    D[i] := D[j];
+    D[j] := tmp;
   end;
 end;
 
-{ ==== Programme Principal ==== }
+{ Récupère la carte suivante (remélange si besoin) }
+function NextCard(var Deck: TDeck; var idx: Integer): TCarte;
+begin
+  if Length(Deck) = 0 then
+    raise Exception.Create('Paquet vide');
+  if idx >= Length(Deck) then
+  begin
+    Shuffle(Deck);
+    idx := 0;
+  end;
+  Result := Deck[idx];
+  Inc(idx);
+end;
 
+{ Lecture sûre d'un entier }
+function ReadIntPrompt(const Prompt: string): Integer;
 var
+  s: string;
+begin
+  repeat
+    Write(Prompt);
+    ReadLn(s);
+    if TryStrToInt(Trim(s), Result) then Exit
+    else Writeln('Entrée invalide, entrez un nombre entier.');
+  until False;
+end;
+
+{ --- Programme principal --- }
+var
+  Valeurs: array[0..12] of string = ('As','2','3','4','5','6','7','8','9','10','Valet','Dame','Roi');
+  Couleurs: array[0..3] of string = ('Pique','Trefle','Carreau','Coeur');
+  Cartes: TDeck;
   Joueur: TJoueur;
   Croupier: TCroupier;
   Game: TGame;
-  Valeurs: array[0..12] of string = ('As','2','3','4','5','6','7','8','9','10','Valet','Dame','Roi');
-  Couleurs: array[0..3] of string = ('Pique','Trèfle','Carreau','Cœur');
-  Cartes: TCardArray;
   i, j, k, Index, MenuChoice, Mise, Choice: Integer;
   JoueurCard1, JoueurCard2, CroupierCard1, CroupierCard2, NewCard, Card: TCarte;
   Continuer, Play: Boolean;
-
 begin
   Randomize;
 
@@ -172,52 +183,48 @@ begin
   writeln('Welcome to the BlackJack game');
   writeln('------------------------------');
 
-  if Joueur.Jeton = 0 then
+  if Joueur.Jetons = 0 then
     writeln('Le joueur n''a pas assez de jetons pour jouer')
   else
   begin
     Index := 0;
     Play := True;
-
     while Play do
     begin
       writeln;
       writeln('1: Voulez-vous jouer ?');
       writeln('2: Quitter le jeu !');
-      readln(MenuChoice);
+      MenuChoice := ReadIntPrompt('Choix (1/2) : ');
 
       case MenuChoice of
         1:
           begin
-            writeln(Joueur.ToString);
-            writeln(Croupier.ToString);
+            writeln(Joueur.AsString);
+            writeln(Croupier.AsString);
 
-            writeln('Quel est votre mise ?');
-            readln(Mise);
-
-            while Mise > Joueur.Jeton do
+            Mise := ReadIntPrompt('Quel est votre mise ? ');
+            while Mise > Joueur.Jetons do
             begin
               writeln('Mise trop haute');
-              writeln('Quel est votre mise ?');
-              readln(Mise);
+              Mise := ReadIntPrompt('Quel est votre mise ? ');
             end;
 
             Game.Pot := Mise;
-            Joueur.Jeton := Joueur.Jeton - Mise;
+            Joueur.Jetons := Joueur.Jetons - Mise;
 
             writeln('Distribution des cartes');
 
-            JoueurCard1 := Cartes[Index]; Inc(Index);
-            CroupierCard1 := Cartes[Index]; Inc(Index);
-            JoueurCard2 := Cartes[Index]; Inc(Index);
-            CroupierCard2 := Cartes[Index]; Inc(Index);
+            JoueurCard1 := NextCard(Cartes, Index);
+            CroupierCard1 := NextCard(Cartes, Index);
+            JoueurCard2 := NextCard(Cartes, Index);
+            CroupierCard2 := NextCard(Cartes, Index);
 
-            Joueur.Score := JoueurCard1.GetValeurNumerique + JoueurCard2.GetValeurNumerique;
-            Croupier.Score := CroupierCard1.GetValeurNumerique;
+            Joueur.Score := JoueurCard1.ValeurNumerique + JoueurCard2.ValeurNumerique;
+            Croupier.Score := CroupierCard1.ValeurNumerique;
 
-            writeln('Vos cartes : ', JoueurCard1.ToString, ' et ', JoueurCard2.ToString);
+            writeln('Vos cartes : ', JoueurCard1.AsString, ' et ', JoueurCard2.AsString);
             writeln('Score joueur : ', Joueur.Score);
-            writeln('Carte visible du croupier : ', CroupierCard1.ToString);
+            writeln('Carte visible du croupier : ', CroupierCard1.AsString);
 
             // Tour du joueur
             Continuer := True;
@@ -227,19 +234,19 @@ begin
               writeln('Que voulez-vous faire ?');
               writeln('1: Tirer une autre carte');
               writeln('2: Rester');
-              readln(Choice);
+              Choice := ReadIntPrompt('Choix (1/2) : ');
 
               case Choice of
                 1:
                   begin
-                    NewCard := Cartes[Index]; Inc(Index);
-                    Joueur.Score := Joueur.Score + NewCard.GetValeurNumerique;
-                    writeln('Vous tirez : ', NewCard.ToString);
+                    NewCard := NextCard(Cartes, Index);
+                    Joueur.Score := Joueur.Score + NewCard.ValeurNumerique;
+                    writeln('Vous tirez : ', NewCard.AsString);
                     writeln('Nouveau score joueur : ', Joueur.Score);
 
                     if Joueur.Score > 21 then
                     begin
-                      writeln('💀 Vous perdez d''office !');
+                      writeln('Vous perdez d''office !');
                       Joueur.Score := 0;
                       Croupier.Score := 0;
                       Continuer := False;
@@ -248,50 +255,59 @@ begin
                 2:
                   begin
                     Continuer := False;
-                    Croupier.Score := Croupier.Score + CroupierCard2.GetValeurNumerique;
-                    writeln('Le croupier révèle sa carte cachée : ', CroupierCard2.ToString);
+                    Croupier.Score := Croupier.Score + CroupierCard2.ValeurNumerique;
+                    writeln('Le croupier révèle sa carte cachée : ', CroupierCard2.AsString);
                     writeln('Score croupier : ', Croupier.Score);
                   end;
+              else
+                writeln('Choix invalide.');
               end;
             end;
 
-            // Tour du croupier si le joueur n’a pas dépassé
+            // Tour du croupier si le joueur n'a pas bust
             if Joueur.Score > 0 then
             begin
               while Croupier.Score < 17 do
               begin
-                Card := Cartes[Index]; Inc(Index);
-                Croupier.Score := Croupier.Score + Card.GetValeurNumerique;
-                writeln('Le croupier tire : ', Card.ToString);
+                Card := NextCard(Cartes, Index);
+                Croupier.Score := Croupier.Score + Card.ValeurNumerique;
+                writeln('Le croupier tire : ', Card.AsString);
                 writeln('Score croupier : ', Croupier.Score);
               end;
 
               if (Croupier.Score > 21) or (Joueur.Score > Croupier.Score) then
               begin
-                writeln('🎉 Vous gagnez !');
-                Joueur.Jeton := Joueur.Jeton + Mise * 2;
+                writeln('Vous gagnez !');
+                Joueur.Jetons := Joueur.Jetons + Mise * 2;
               end
               else if Joueur.Score < Croupier.Score then
-              begin
-                writeln('Le croupier gagne !');
-              end
+                writeln('Le croupier gagne !')
               else
               begin
-                writeln('Égalité !');
-                Joueur.Jeton := Joueur.Jeton + Mise; // On rend la mise
+                writeln('Egalite !');
+                Joueur.Jetons := Joueur.Jetons + Mise;
               end;
             end;
 
             Joueur.Score := 0;
             Croupier.Score := 0;
           end;
-
-        2:
-          Play := False;
+        2: Play := False;
+      else
+        writeln('Choix invalide.');
       end;
     end;
   end;
 
   writeln('Merci d''avoir joué !');
+
+  { Libération mémoire }
+  for i := 0 to High(Cartes) do
+    Cartes[i].Free;
+  SetLength(Cartes, 0);
+  Joueur.Free;
+  Croupier.Free;
+  Game.Free;
+
   readln;
 end.
