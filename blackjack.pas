@@ -192,15 +192,17 @@ begin
     while Play do
     begin
       writeln;
-      writeln('1: Voulez-vous jouer ?');
+      writeln('1: Continuer de jouer ?');
       writeln('2: Quitter le jeu !');
       MenuChoice := ReadIntPrompt('Choix (1/2) : ');
 
       case MenuChoice of
         1:
           begin
+            writeln;
             writeln(Joueur.AsString);
             writeln(Croupier.AsString);
+            writeln;
 
             Mise := ReadIntPrompt('Quel est votre mise ? ');
             while Mise > Joueur.Jetons do
@@ -211,9 +213,10 @@ begin
 
             Game.Pot := Mise;
             Joueur.Jetons := Joueur.Jetons - Mise;
-
+            writeln;
             writeln('Distribution des cartes');
-
+            writeln;
+            
             JoueurCard1 := NextCard(Cartes, Index);
             CroupierCard1 := NextCard(Cartes, Index);
             JoueurCard2 := NextCard(Cartes, Index);
