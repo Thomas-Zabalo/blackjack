@@ -19,8 +19,7 @@ var
   textColor: TSDL_Color;
 
   // Rectangles des boutons
-  btnBlackjackRect, btnRouletteRect, btnSlotsRect, btnQuitRect, titleRect: TSDL_Rect;
-  tempRect: TSDL_Rect; // Rectangle temporaire pour les messages
+  btnBlackjackRect, btnRouletteRect, btnSlotsRect, btnQuitRect: TSDL_Rect;
 
   // Textes
   texteBlackjack: string = 'Blackjack';
@@ -30,13 +29,14 @@ var
 
   etatJeu: TGameState;
   mouseX, mouseY: Integer;
+  screenW, screenH: Integer;
 
   // Pour le texte SDL
   textSurface: PSDL_Surface;
   textTexture: PSDL_Texture;
   textRect: TSDL_Rect;
 
-procedure DessinerTexte(s: AnsiString; rect: TSDL_Rect);
+procedure DessinerTexte(s: AnsiString; x, y: Integer; alignCenter: Boolean);
 begin
   textSurface := TTF_RenderText_Blended(font, PAnsiChar(s), textColor);
   if textSurface <> nil then
@@ -44,13 +44,114 @@ begin
     textTexture := SDL_CreateTextureFromSurface(renderer, textSurface);
     textRect.w := textSurface^.w;
     textRect.h := textSurface^.h;
-    textRect.x := rect.x + (rect.w - textRect.w) div 2;
-    textRect.y := rect.y + (rect.h - textRect.h) div 2;
+    if alignCenter then
+      textRect.x := x - textRect.w div 2
+    else
+      textRect.x := x;
+    textRect.y := y;
     SDL_RenderCopy(renderer, textTexture, nil, @textRect);
     SDL_FreeSurface(textSurface);
     SDL_DestroyTexture(textTexture);
   end;
 end;
+
+// Surcharge pour l'alignement par défaut à gauche
+procedure DessinerTexte(s: AnsiString; x, y: Integer);
+begin
+  DessinerTexte(s, x, y, False);
+end;
+
+procedure DessinerBouton(rect: TSDL_Rect; texte: string);
+begin
+  SDL_SetRenderDrawColor(renderer, 70, 70, 150, 255);
+  SDL_RenderFillRect(renderer, @rect);
+  SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+  SDL_RenderDrawRect(renderer, @rect);
+  DessinerTexte(texte, rect.x + rect.w div 2, rect.y + rect.h div 2 - 12, True);
+end;
+
+procedure LancerBlackjackPleinEcran;
+var
+  fenetreBJ: PSDL_Window;
+  renduBJ: PSDL_Renderer;
+  fontBJ: PTTF_Font;
+  modeDM: TSDL_DisplayMode;
+begin
+  // Obtenir la résolution de l'écran
+  if SDL_GetDesktopDisplayMode(0, @modeDM) <> 0 then
+  begin
+    WriteLn('Erreur SDL_GetDesktopDisplayMode: ', SDL_GetError);
+    Exit;
+  end;
+
+  screenW := modeDM.w;
+  screenH := modeDM.h;
+
+  // Créer une nouvelle fenêtre en plein écran pour le Blackjack
+  fenetreBJ := SDL_CreateWindow('BlackJack - Plein Ecran',
+    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    screenW, screenH,
+    SDL_WINDOW_FULLSCREEN_DESKTOP);
+    
+  if fenetreBJ = nil then
+  begin
+    WriteLn('Erreur création fenêtre Blackjack: ', SDL_GetError);
+    Exit;
+  end;
+
+  // Créer le renderer pour le Blackjack
+  renduBJ := SDL_CreateRenderer(fenetreBJ, -1, 
+    SDL_RENDERER_ACCELERATED or SDL_RENDERER_PRESENTVSYNC);
+    
+  if renduBJ = nil then
+  begin
+    WriteLn('Erreur création renderer Blackjack: ', SDL_GetError);
+    SDL_DestroyWindow(fenetreBJ);
+    Exit;
+  end;
+
+  // Charger une police pour le Blackjack
+  fontBJ := TTF_OpenFont('arial.ttf', 24);
+  if fontBJ = nil then
+    fontBJ := TTF_OpenFont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 24);
+
+  // Lancer le vrai jeu Blackjack
+  LancerBlackjack(renduBJ, fontBJ);
+
+  // Nettoyage
+  if fontBJ <> nil then
+    TTF_CloseFont(fontBJ);
+  if renduBJ <> nil then
+    SDL_DestroyRenderer(renduBJ);
+  if fenetreBJ <> nil then
+    SDL_DestroyWindow(fenetreBJ);
+end;
+
+procedure AfficherMenuPrincipal;
+begin
+  // Fond bleu nuit
+  SDL_SetRenderDrawColor(renderer, 30, 30, 60, 255);
+  SDL_RenderClear(renderer);
+
+  // Titre du casino
+  DessinerTexte('CASINO VIRTUEL', screenW div 2, 100, True);
+
+  // Bouton Blackjack
+  DessinerBouton(btnBlackjackRect, texteBlackjack);
+
+  // Bouton Roulette
+  DessinerBouton(btnRouletteRect, texteRoulette);
+
+  // Bouton Machine à sous
+  DessinerBouton(btnSlotsRect, texteSlots);
+
+  // Bouton Quitter
+  DessinerBouton(btnQuitRect, texteQuit);
+end;
+
+var
+  modeDM: TSDL_DisplayMode;
+  btnWidth, btnHeight, btnSpacing, totalHeight, startY: Integer;
 
 begin
   // --- Initialisation SDL ---
@@ -62,18 +163,33 @@ begin
   
   if (IMG_Init(IMG_INIT_PNG) and IMG_INIT_PNG) = 0 then 
   begin
-    Writeln('Erreur IMG_Init: ', SDL_GetError());
+    Writeln('Erreur IMG_Init: ', IMG_GetError());
     Halt(1);
   end;
   
   if TTF_Init() <> 0 then 
   begin
-    Writeln('Erreur TTF_Init: ', SDL_GetError());
+    Writeln('Erreur TTF_Init: ', TTF_GetError());
     Halt(1);
   end;
 
-  window := SDL_CreateWindow('Menu Casino', SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                             800, 600, SDL_WINDOW_SHOWN);
+  // Obtenir la résolution de l'écran pour le plein écran
+  if SDL_GetDesktopDisplayMode(0, @modeDM) = 0 then
+  begin
+    screenW := modeDM.w;
+    screenH := modeDM.h;
+  end
+  else
+  begin
+    screenW := 800;
+    screenH := 600;
+  end;
+
+  // Créer la fenêtre en plein écran
+  window := SDL_CreateWindow('Casino Virtuel', 
+    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    screenW, screenH, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    
   if window = nil then
   begin
     Writeln('Erreur création fenêtre: ', SDL_GetError());
@@ -94,19 +210,38 @@ begin
     font := TTF_OpenFont('/usr/share/fonts/truetype/freefont/FreeSans.ttf', 24);
     if font = nil then
     begin
-      Writeln('Erreur chargement police: ', SDL_GetError());
-      Writeln('Essayez d''installer les polices: sudo apt-get install ttf-mscorefonts-installer');
+      Writeln('Erreur chargement police: ', TTF_GetError());
     end;
   end;
 
   textColor.r := 255; textColor.g := 255; textColor.b := 255; textColor.a := 255;
 
-  // Position des boutons (alignés verticalement)
-  btnBlackjackRect.x := 300; btnBlackjackRect.y := 150; btnBlackjackRect.w := 200; btnBlackjackRect.h := 60;
-  btnRouletteRect.x := 300; btnRouletteRect.y := 230; btnRouletteRect.w := 200; btnRouletteRect.h := 60;
-  btnSlotsRect.x := 300; btnSlotsRect.y := 310; btnSlotsRect.w := 200; btnSlotsRect.h := 60;
-  btnQuitRect.x := 300; btnQuitRect.y := 390; btnQuitRect.w := 200; btnQuitRect.h := 60;
-  titleRect.x := 250; titleRect.y := 50; titleRect.w := 300; titleRect.h := 80;
+  // Position des boutons du menu (centrés)
+  btnWidth := 300;
+  btnHeight := 80;
+  btnSpacing := 20;
+  totalHeight := 4 * btnHeight + 3 * btnSpacing;
+  startY := (screenH - totalHeight) div 2;
+  
+  btnBlackjackRect.x := (screenW - btnWidth) div 2;
+  btnBlackjackRect.y := startY;
+  btnBlackjackRect.w := btnWidth;
+  btnBlackjackRect.h := btnHeight;
+  
+  btnRouletteRect.x := (screenW - btnWidth) div 2;
+  btnRouletteRect.y := startY + btnHeight + btnSpacing;
+  btnRouletteRect.w := btnWidth;
+  btnRouletteRect.h := btnHeight;
+  
+  btnSlotsRect.x := (screenW - btnWidth) div 2;
+  btnSlotsRect.y := startY + 2 * (btnHeight + btnSpacing);
+  btnSlotsRect.w := btnWidth;
+  btnSlotsRect.h := btnHeight;
+  
+  btnQuitRect.x := (screenW - btnWidth) div 2;
+  btnQuitRect.y := startY + 3 * (btnHeight + btnSpacing);
+  btnQuitRect.w := btnWidth;
+  btnQuitRect.h := btnHeight;
 
   etatJeu := MENU;
   running := True;
@@ -118,6 +253,10 @@ begin
       case event.type_ of
         SDL_QUITEV: running := False;
 
+        SDL_KEYDOWN:
+          if event.key.keysym.sym = SDLK_ESCAPE then
+            running := False;
+
         SDL_MOUSEBUTTONDOWN:
           if event.button.button = SDL_BUTTON_LEFT then
           begin
@@ -126,17 +265,18 @@ begin
 
             if etatJeu = MENU then
             begin
-              // Blackjack
+              // Blackjack - Lance votre jeu existant
               if (mouseX >= btnBlackjackRect.x) and (mouseX <= btnBlackjackRect.x + btnBlackjackRect.w) and
                  (mouseY >= btnBlackjackRect.y) and (mouseY <= btnBlackjackRect.y + btnBlackjackRect.h) then
-                etatJeu := JEU_BLACKJACK;
+              begin
+                LancerBlackjackPleinEcran;
+              end;
 
               // Roulette
               if (mouseX >= btnRouletteRect.x) and (mouseX <= btnRouletteRect.x + btnRouletteRect.w) and
                  (mouseY >= btnRouletteRect.y) and (mouseY <= btnRouletteRect.y + btnRouletteRect.h) then
               begin
                 etatJeu := JEU_ROULETTE;
-                Writeln('Roulette (pas encore codé)');
               end;
 
               // Machine à sous
@@ -144,7 +284,6 @@ begin
                  (mouseY >= btnSlotsRect.y) and (mouseY <= btnSlotsRect.y + btnSlotsRect.h) then
               begin
                 etatJeu := JEU_SLOTS;
-                Writeln('Machine à sous (pas encore codé)');
               end;
 
               // Quitter
@@ -157,58 +296,17 @@ begin
     end;
 
     // --- Dessin ---
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-
     case etatJeu of
       MENU:
         begin
-          // Dessiner un fond pour le menu
-          SDL_SetRenderDrawColor(renderer, 30, 30, 60, 255);
-          SDL_RenderClear(renderer);
-
-          // Titre du casino
-          SDL_SetRenderDrawColor(renderer, 100, 0, 0, 255);
-          SDL_RenderFillRect(renderer, @titleRect);
-          DessinerTexte('CASINO VIRTUEL', titleRect);
-
-          // Bouton Blackjack
-          SDL_SetRenderDrawColor(renderer, 0, 100, 200, 255);
-          SDL_RenderFillRect(renderer, @btnBlackjackRect);
-          DessinerTexte(texteBlackjack, btnBlackjackRect);
-
-          // Bouton Roulette
-          SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
-          SDL_RenderFillRect(renderer, @btnRouletteRect);
-          DessinerTexte(texteRoulette, btnRouletteRect);
-
-          // Bouton Machine à sous
-          SDL_SetRenderDrawColor(renderer, 200, 100, 0, 255);
-          SDL_RenderFillRect(renderer, @btnSlotsRect);
-          DessinerTexte(texteSlots, btnSlotsRect);
-
-          // Bouton Quitter
-          SDL_SetRenderDrawColor(renderer, 200, 0, 0, 255);
-          SDL_RenderFillRect(renderer, @btnQuitRect);
-          DessinerTexte(texteQuit, btnQuitRect);
-        end;
-
-      JEU_BLACKJACK:
-        begin
-          LancerBlackjack(renderer, font);
-          etatJeu := MENU;
+          AfficherMenuPrincipal;
         end;
 
       JEU_ROULETTE:
         begin
-          // écran placeholder
           SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
           SDL_RenderClear(renderer);
-          
-          // Utiliser le rectangle temporaire pour le message
-          tempRect.x := 200; tempRect.y := 250; tempRect.w := 400; tempRect.h := 100;
-          DessinerTexte('ROULETTE - EN DEVELOPPEMENT', tempRect);
-          
+          DessinerTexte('ROULETTE - EN DEVELOPPEMENT', screenW div 2, screenH div 2, True);
           SDL_RenderPresent(renderer);
           SDL_Delay(2000);
           etatJeu := MENU;
@@ -216,14 +314,9 @@ begin
 
       JEU_SLOTS:
         begin
-          // écran placeholder
           SDL_SetRenderDrawColor(renderer, 80, 0, 80, 255);
           SDL_RenderClear(renderer);
-          
-          // Utiliser le rectangle temporaire pour le message
-          tempRect.x := 150; tempRect.y := 250; tempRect.w := 500; tempRect.h := 100;
-          DessinerTexte('MACHINE A SOUS - EN DEVELOPPEMENT', tempRect);
-          
+          DessinerTexte('MACHINE A SOUS - EN DEVELOPPEMENT', screenW div 2, screenH div 2, True);
           SDL_RenderPresent(renderer);
           SDL_Delay(2000);
           etatJeu := MENU;

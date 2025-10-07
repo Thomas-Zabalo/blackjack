@@ -5,38 +5,32 @@ unit BlackJack;
 interface
 
 uses
-  SDL2, SDL2_ttf, SDL2_image, SysUtils;
+  SDL2, SDL2_ttf, SysUtils;
 
 procedure LancerBlackjack(renderer: PSDL_Renderer; font: PTTF_Font);
 
 implementation
 
 type
-  // -------- Type pour une carte --------
   TCarte = record
     Valeur: string;
     Couleur: string;
   end;
 
-  // -------- Type pour un joueur --------
   TJoueur = record
     Score: Integer;
     Jetons: Integer;
-    NombreCartes: Integer;
+    Cartes: array of TCarte;
   end;
 
-  // -------- Type pour le croupier --------
   TCroupier = record
     Score: Integer;
-    NombreCartes: Integer;
+    Cartes: array of TCarte;
+    PremiereCarteCachee: Boolean;
   end;
 
-  // -------- Type pour la partie --------
-  TPartie = record
-    MiseTotale: Integer;
-  end;
+  TPartieEtat = (ETAT_MISE, ETAT_JEU, ETAT_RESULTAT);
 
-// Tableaux pour les valeurs et couleurs des cartes
 const
   ValeursCartes: array[0..12] of string = ('As','2','3','4','5','6','7','8','9','10','Valet','Dame','Roi');
   CouleursCartes: array[0..3] of string = ('Pique','Trèfle','Carreau','Cœur');
@@ -44,15 +38,18 @@ const
 var
   JeuCartes: array of TCarte;
   IndexCarte: Integer;
+  Joueur: TJoueur;
+  Croupier: TCroupier;
+  PartieEtat: TPartieEtat;
+  MiseActuelle: Integer;
 
-// Fonction pour créer une carte
+// Fonctions de base du jeu
 function CreerCarte(Valeur, Couleur: string): TCarte;
 begin
   Result.Valeur := Valeur;
   Result.Couleur := Couleur;
 end;
 
-// Fonction pour obtenir la valeur numérique d'une carte
 function ValeurNumeriqueCarte(Carte: TCarte): Integer;
 begin
   if Carte.Valeur = 'As' then
@@ -63,220 +60,351 @@ begin
     Result := StrToInt(Carte.Valeur);
 end;
 
-// Fonction pour afficher une carte
-function AfficherCarte(Carte: TCarte): string;
-begin
-  Result := Carte.Valeur + ' de ' + Carte.Couleur;
-end;
-
-// Procédure pour mélanger les cartes
-procedure MelangerCartes(var Cartes: array of TCarte);
+procedure MelangerCartes;
 var
   i, j: Integer;
   Temp: TCarte;
 begin
-  for i := High(Cartes) downto Low(Cartes) do
+  for i := High(JeuCartes) downto Low(JeuCartes) do
   begin
-    j := Random(Length(Cartes));
-    Temp := Cartes[i];
-    Cartes[i] := Cartes[j];
-    Cartes[j] := Temp;
+    j := Random(Length(JeuCartes));
+    Temp := JeuCartes[i];
+    JeuCartes[i] := JeuCartes[j];
+    JeuCartes[j] := Temp;
   end;
 end;
 
-// Procédure pour initialiser le jeu
-procedure InitialiserJeu(var Joueur: TJoueur; var Croupier: TCroupier; var Partie: TPartie);
+procedure InitialiserJeu;
 var
-  i, j, k: Integer;
+  i, j: Integer;
 begin
-  // Créer le joueur avec 200 jetons
+  // Créer le jeu de cartes (1 paquet pour simplifier)
+  SetLength(JeuCartes, 52);
+  for i := 0 to 12 do
+    for j := 0 to 3 do
+      JeuCartes[i*4 + j] := CreerCarte(ValeursCartes[i], CouleursCartes[j]);
+  
+  MelangerCartes;
+  IndexCarte := 0;
+  
+  // Initialiser joueur
+  SetLength(Joueur.Cartes, 0);
   Joueur.Score := 0;
   Joueur.Jetons := 200;
-  Joueur.NombreCartes := 0;
   
-  // Créer le croupier
+  // Initialiser croupier
+  SetLength(Croupier.Cartes, 0);
   Croupier.Score := 0;
-  Croupier.NombreCartes := 0;
+  Croupier.PremiereCarteCachee := True;
   
-  // Initialiser la partie
-  Partie.MiseTotale := 0;
-  
-  // Créer le jeu de cartes (6 paquets)
-  SetLength(JeuCartes, 6 * 13 * 4);
-  for i := 0 to 5 do
-    for j := 0 to 12 do
-      for k := 0 to 3 do
-        JeuCartes[i*52 + j*4 + k] := CreerCarte(ValeursCartes[j], CouleursCartes[k]);
-  
-  // Mélanger les cartes
-  MelangerCartes(JeuCartes);
-  IndexCarte := 0;
+  // Initialiser partie
+  MiseActuelle := 0;
+  PartieEtat := ETAT_MISE;
 end;
 
-// Procédure pour afficher l'état du jeu
-procedure AfficherEtat(Joueur: TJoueur; Partie: TPartie);
+function CalculerScore(Cartes: array of TCarte): Integer;
+var
+  i, score, asCount: Integer;
 begin
-  writeln('Votre score: ', Joueur.Score);
-  writeln('Vos jetons: ', Joueur.Jetons);
-  writeln('Mise actuelle: ', Partie.MiseTotale);
+  score := 0;
+  asCount := 0;
+  
+  for i := 0 to High(Cartes) do
+  begin
+    score := score + ValeurNumeriqueCarte(Cartes[i]);
+    if Cartes[i].Valeur = 'As' then
+      asCount := asCount + 1;
+  end;
+  
+  // Gérer les As (11 ou 1 point)
+  while (score > 21) and (asCount > 0) do
+  begin
+    score := score - 10;
+    asCount := asCount - 1;
+  end;
+  
+  Result := score;
+end;
+
+procedure DistribuerCartesInitiales;
+begin
+  // Distribuer 2 cartes au joueur
+  SetLength(Joueur.Cartes, 2);
+  Joueur.Cartes[0] := JeuCartes[IndexCarte]; Inc(IndexCarte);
+  Joueur.Cartes[1] := JeuCartes[IndexCarte]; Inc(IndexCarte);
+  Joueur.Score := CalculerScore(Joueur.Cartes);
+  
+  // Distribuer 2 cartes au croupier
+  SetLength(Croupier.Cartes, 2);
+  Croupier.Cartes[0] := JeuCartes[IndexCarte]; Inc(IndexCarte);
+  Croupier.Cartes[1] := JeuCartes[IndexCarte]; Inc(IndexCarte);
+  Croupier.Score := CalculerScore(Croupier.Cartes);
+  
+  Croupier.PremiereCarteCachee := True;
+  PartieEtat := ETAT_JEU;
+end;
+
+procedure JoueurTirerCarte;
+begin
+  SetLength(Joueur.Cartes, Length(Joueur.Cartes) + 1);
+  Joueur.Cartes[High(Joueur.Cartes)] := JeuCartes[IndexCarte];
+  Inc(IndexCarte);
+  Joueur.Score := CalculerScore(Joueur.Cartes);
+  
+  if Joueur.Score > 21 then
+  begin
+    PartieEtat := ETAT_RESULTAT;
+    Croupier.PremiereCarteCachee := False;
+  end;
+end;
+
+procedure CroupierJouer;
+begin
+  Croupier.PremiereCarteCachee := False;
+  
+  // Le croupier tire jusqu'à 17 ou plus
+  while Croupier.Score < 17 do
+  begin
+    SetLength(Croupier.Cartes, Length(Croupier.Cartes) + 1);
+    Croupier.Cartes[High(Croupier.Cartes)] := JeuCartes[IndexCarte];
+    Inc(IndexCarte);
+    Croupier.Score := CalculerScore(Croupier.Cartes);
+  end;
+  
+  PartieEtat := ETAT_RESULTAT;
+end;
+
+procedure DeterminerResultat;
+begin
+  if Joueur.Score > 21 then
+    // Joueur a dépassé 21, il perd
+  else if Croupier.Score > 21 then
+  begin
+    // Croupier dépasse 21, joueur gagne
+    Joueur.Jetons := Joueur.Jetons + MiseActuelle * 2;
+  end
+  else if Joueur.Score > Croupier.Score then
+  begin
+    // Joueur a un meilleur score
+    Joueur.Jetons := Joueur.Jetons + MiseActuelle * 2;
+  end
+  else if Croupier.Score > Joueur.Score then
+  begin
+    // Croupier a un meilleur score, joueur perd sa mise
+  end
+  else
+  begin
+    // Égalité, joueur récupère sa mise
+    Joueur.Jetons := Joueur.Jetons + MiseActuelle;
+  end;
+end;
+
+procedure NouvelleMain;
+begin
+  SetLength(Joueur.Cartes, 0);
+  SetLength(Croupier.Cartes, 0);
+  Joueur.Score := 0;
+  Croupier.Score := 0;
+  MiseActuelle := 0;
+  PartieEtat := ETAT_MISE;
+  
+  // Si on arrive à la fin du paquet, on remélange
+  if IndexCarte > 40 then
+  begin
+    MelangerCartes;
+    IndexCarte := 0;
+  end;
+end;
+
+// Fonctions d'affichage SDL2
+procedure DessinerTexte(renderer: PSDL_Renderer; font: PTTF_Font; texte: string; x, y: Integer; alignCenter: Boolean);
+var
+  surface: PSDL_Surface;
+  texture: PSDL_Texture;
+  rect: TSDL_Rect;
+  color: TSDL_Color;
+begin
+  color.r := 255; color.g := 255; color.b := 255; color.a := 255;
+  
+  surface := TTF_RenderText_Blended(font, PChar(texte), color);
+  if surface <> nil then
+  begin
+    texture := SDL_CreateTextureFromSurface(renderer, surface);
+    rect.w := surface^.w;
+    rect.h := surface^.h;
+    if alignCenter then
+      rect.x := x - rect.w div 2
+    else
+      rect.x := x;
+    rect.y := y;
+    SDL_RenderCopy(renderer, texture, nil, @rect);
+    SDL_FreeSurface(surface);
+    SDL_DestroyTexture(texture);
+  end;
+end;
+
+procedure DessinerCarte(renderer: PSDL_Renderer; font: PTTF_Font; carte: TCarte; x, y: Integer; cachee: Boolean);
+var
+  rect: TSDL_Rect;
+  texte: string;
+begin
+  // Rectangle de la carte
+  rect.x := x;
+  rect.y := y;
+  rect.w := 80;
+  rect.h := 120;
+  
+  if cachee then
+  begin
+    SDL_SetRenderDrawColor(renderer, 0, 0, 139, 255); // Bleu foncé pour carte cachée
+    SDL_RenderFillRect(renderer, @rect);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderDrawRect(renderer, @rect);
+    DessinerTexte(renderer, font, '?', x + 40, y + 60, True);
+  end
+  else
+  begin
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // Blanc pour carte visible
+    SDL_RenderFillRect(renderer, @rect);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderDrawRect(renderer, @rect);
+    
+    texte := carte.Valeur + ' ' + Copy(carte.Couleur, 1, 1);
+    DessinerTexte(renderer, font, texte, x + 40, y + 60, True);
+  end;
+end;
+
+procedure AfficherJeu(renderer: PSDL_Renderer; font: PTTF_Font);
+var
+  i: Integer;
+  message, scoreCroupier: string;
+begin
+  // Fond vert de la table
+  SDL_SetRenderDrawColor(renderer, 0, 100, 0, 255);
+  SDL_RenderClear(renderer);
+  
+  // Titre
+  DessinerTexte(renderer, font, 'BLACKJACK', 400, 20, True);
+  
+  // Informations joueur
+  DessinerTexte(renderer, font, 'Jetons: ' + IntToStr(Joueur.Jetons), 20, 20, False);
+  DessinerTexte(renderer, font, 'Mise: ' + IntToStr(MiseActuelle), 20, 50, False);
+  
+  // Score du croupier
+  if Croupier.PremiereCarteCachee then
+    scoreCroupier := '?'
+  else
+    scoreCroupier := IntToStr(Croupier.Score);
+  
+  DessinerTexte(renderer, font, 'Croupier - Score: ' + scoreCroupier, 400, 100, True);
+  
+  // Cartes du croupier
+  for i := 0 to High(Croupier.Cartes) do
+  begin
+    if (i = 0) and Croupier.PremiereCarteCachee then
+      DessinerCarte(renderer, font, Croupier.Cartes[i], 300 + i * 90, 130, True)
+    else
+      DessinerCarte(renderer, font, Croupier.Cartes[i], 300 + i * 90, 130, False);
+  end;
+  
+  // Cartes du joueur
+  DessinerTexte(renderer, font, 'Votre main - Score: ' + IntToStr(Joueur.Score), 400, 300, True);
+  
+  for i := 0 to High(Joueur.Cartes) do
+    DessinerCarte(renderer, font, Joueur.Cartes[i], 300 + i * 90, 330, False);
+  
+  // Messages selon l'état du jeu
+  case PartieEtat of
+    ETAT_MISE:
+      begin
+        DessinerTexte(renderer, font, 'MISEZ: 1=10, 2=25, 3=50, 4=100 - ESPACE pour valider', 400, 500, True);
+        DessinerTexte(renderer, font, 'ECHAP pour quitter', 400, 530, True);
+      end;
+    
+    ETAT_JEU:
+      begin
+        DessinerTexte(renderer, font, 'H: Hit (Prendre une carte)  S: Stand (Rester)', 400, 500, True);
+        DessinerTexte(renderer, font, 'ECHAP pour quitter', 400, 530, True);
+        
+        if Joueur.Score = 21 then
+          DessinerTexte(renderer, font, 'BLACKJACK!', 400, 470, True);
+      end;
+    
+    ETAT_RESULTAT:
+      begin
+        if Joueur.Score > 21 then
+          message := 'VOUS AVEZ DEPASSE 21! VOUS PERDEZ.'
+        else if Croupier.Score > 21 then
+          message := 'CROUPIER DEPASSE 21! VOUS GAGNEZ!'
+        else if Joueur.Score > Croupier.Score then
+          message := 'VOUS GAGNEZ!'
+        else if Croupier.Score > Joueur.Score then
+          message := 'CROUPIER GAGNE!'
+        else
+          message := 'EGALITE!';
+        
+        DessinerTexte(renderer, font, message, 400, 470, True);
+        DessinerTexte(renderer, font, 'ESPACE pour nouvelle main - ECHAP pour quitter', 400, 500, True);
+      end;
+  end;
 end;
 
 procedure LancerBlackjack(renderer: PSDL_Renderer; font: PTTF_Font);
 var
-  Joueur: TJoueur;
-  Croupier: TCroupier;
-  Partie: TPartie;
-  ChoixMenu, Mise, Choix: Integer;
-  ContinuerPartie: Boolean;
+  event: TSDL_Event;
+  quit: Boolean;
 begin
   Randomize;
-  InitialiserJeu(Joueur, Croupier, Partie);
+  InitialiserJeu;
+  quit := False;
   
-  writeln('Bienvenue au jeu de BlackJack!');
-  writeln('------------------------------');
-  
-  ContinuerPartie := True;
-  
-  while ContinuerPartie and (Joueur.Jetons > 0) do
+  while not quit do
   begin
-    writeln;
-    writeln('Que voulez-vous faire?');
-    writeln('1: Jouer une main');
-    writeln('2: Quitter le jeu');
-    write('Votre choix: ');
-    readln(ChoixMenu);
-    
-    case ChoixMenu of
-      1:
-        begin
-          // Demander la mise
-          writeln;
-          write('Combien voulez-vous miser? ');
-          readln(Mise);
-          
-          // Vérifier que la mise est valide
-          while Mise > Joueur.Jetons do
+    while SDL_PollEvent(@event) <> 0 do
+    begin
+      case event.type_ of
+        SDL_QUITEV: 
+          quit := True;
+        
+        SDL_KEYDOWN:
           begin
-            writeln('Vous n''avez pas assez de jetons!');
-            write('Combien voulez-vous miser? ');
-            readln(Mise);
-          end;
-          
-          // Déduire la mise des jetons du joueur
-          Joueur.Jetons := Joueur.Jetons - Mise;
-          Partie.MiseTotale := Mise;
-          
-          // Distribuer les cartes
-          writeln;
-          writeln('Distribution des cartes...');
-          
-          // Cartes du joueur
-          Joueur.Score := ValeurNumeriqueCarte(JeuCartes[IndexCarte]) +
-                          ValeurNumeriqueCarte(JeuCartes[IndexCarte+1]);
-          writeln('Vos cartes: ', AfficherCarte(JeuCartes[IndexCarte]), ' et ',
-                  AfficherCarte(JeuCartes[IndexCarte+1]));
-          writeln('Votre score: ', Joueur.Score);
-          
-          // Carte visible du croupier
-          Croupier.Score := ValeurNumeriqueCarte(JeuCartes[IndexCarte+2]);
-          writeln('Carte visible du croupier: ', AfficherCarte(JeuCartes[IndexCarte+2]));
-          
-          IndexCarte := IndexCarte + 3;
-          
-          // Tour du joueur
-          writeln;
-          writeln('--- Votre tour ---');
-          while True do
-          begin
-            writeln;
-            writeln('Que voulez-vous faire?');
-            writeln('1: Prendre une carte');
-            writeln('2: Rester');
-            write('Votre choix: ');
-            readln(Choix);
-            
-            if Choix = 1 then
-            begin
-              // Donner une carte supplémentaire au joueur
-              Joueur.Score := Joueur.Score + ValeurNumeriqueCarte(JeuCartes[IndexCarte]);
-              writeln('Vous recevez: ', AfficherCarte(JeuCartes[IndexCarte]));
-              writeln('Nouveau score: ', Joueur.Score);
+            case event.key.keysym.sym of
+              SDLK_ESCAPE:
+                quit := True;
               
-              IndexCarte := IndexCarte + 1;
+              SDLK_SPACE:
+                begin
+                  case PartieEtat of
+                    ETAT_MISE:
+                      if MiseActuelle > 0 then
+                        DistribuerCartesInitiales;
+                    ETAT_RESULTAT:
+                      NouvelleMain;
+                  end;
+                end;
               
-              // Vérifier si le joueur a dépassé 21
-              if Joueur.Score > 21 then
-              begin
-                writeln('Vous avez dépassé 21! Vous perdez.');
-                Break;
-              end;
-            end
-            else
-            begin
-              Break;
+              // Mises
+              SDLK_1: if PartieEtat = ETAT_MISE then MiseActuelle := 10;
+              SDLK_2: if PartieEtat = ETAT_MISE then MiseActuelle := 25;
+              SDLK_3: if PartieEtat = ETAT_MISE then MiseActuelle := 50;
+              SDLK_4: if PartieEtat = ETAT_MISE then MiseActuelle := 100;
+              
+              // Actions de jeu
+              SDLK_h: if PartieEtat = ETAT_JEU then JoueurTirerCarte;
+              SDLK_s: if PartieEtat = ETAT_JEU then
+                      begin
+                        CroupierJouer;
+                        DeterminerResultat;
+                      end;
             end;
           end;
-          
-          // Tour du croupier si le joueur n'a pas perdu
-          if Joueur.Score <= 21 then
-          begin
-            writeln;
-            writeln('--- Tour du croupier ---');
-            
-            // Le croupier prend sa deuxième carte
-            Croupier.Score := Croupier.Score + ValeurNumeriqueCarte(JeuCartes[IndexCarte]);
-            writeln('Le croupier prend sa deuxième carte: ', AfficherCarte(JeuCartes[IndexCarte]));
-            writeln('Score du croupier: ', Croupier.Score);
-            
-            IndexCarte := IndexCarte + 1;
-            
-            // Le croupier prend des cartes supplémentaires jusqu'à avoir au moins 17
-            while Croupier.Score < 17 do
-            begin
-              Croupier.Score := Croupier.Score + ValeurNumeriqueCarte(JeuCartes[IndexCarte]);
-              writeln('Le croupier prend une carte: ', AfficherCarte(JeuCartes[IndexCarte]));
-              writeln('Nouveau score du croupier: ', Croupier.Score);
-              
-              IndexCarte := IndexCarte + 1;
-            end;
-            
-            // Déterminer le gagnant
-            writeln;
-            if (Croupier.Score > 21) or (Joueur.Score > Croupier.Score) then
-            begin
-              writeln('Vous gagnez!');
-              Joueur.Jetons := Joueur.Jetons + 2 * Mise;
-            end
-            else if Joueur.Score < Croupier.Score then
-            begin
-              writeln('Le croupier gagne!');
-            end
-            else
-            begin
-              writeln('Égalité! Vous récupérez votre mise.');
-              Joueur.Jetons := Joueur.Jetons + Mise;
-            end;
-          end;
-          
-          // Réinitialiser pour la prochaine main
-          Joueur.Score := 0;
-          Croupier.Score := 0;
-        end;
-      
-      2:
-        begin
-          ContinuerPartie := False;
-        end;
+      end;
     end;
+    
+    AfficherJeu(renderer, font);
+    SDL_RenderPresent(renderer);
+    SDL_Delay(16);
   end;
-  
-  if Joueur.Jetons <= 0 then
-    writeln('Vous n''avez plus de jetons! Game over.');
-  
-  writeln;
-  writeln('Merci d''avoir joué!');
-  writeln('Jetons finaux: ', Joueur.Jetons);
-  readln;
 end;
 
 end.
