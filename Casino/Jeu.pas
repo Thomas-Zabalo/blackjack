@@ -6,16 +6,14 @@ uses
   {$ENDIF}
   SDL2,
   SDL2_ttf,
-  SysUtils;
+  SDL2_image,
+  SysUtils,
+  Blackjack;
   
-  
-
-
 const
-  WINDOW_WIDTH  = 1800;
-  WINDOW_HEIGHT = 1600;
-  BUTTON_W      = 300;
-  BUTTON_H      = 70;
+  WINDOW_WIDTH  = 1920;
+  WINDOW_HEIGHT = 1080;
+  BUTTON_SIZE = 300;
   BUTTON_SPACING = 20;
 
 var
@@ -23,23 +21,27 @@ var
   renderer: PSDL_Renderer;
   event: TSDL_Event;
   running: Boolean;
+  
+  backgroundTexture: PSDL_Texture;
+  backgroundSurface: PSDL_Surface;
+
+  btnBlackjackTex, btnBlackjackHoverTex,
+  btnRouletteTex, btnRouletteHoverTex,
+  btnMachineTex, btnMachineHoverTex: PSDL_Texture;
+  surf: PSDL_Surface;
 
   font: PTTF_Font;
   textSurface: PSDL_Surface;
   textTexture: PSDL_Texture;
   textColor: TSDL_Color;
   
- 
   mouseX, mouseY: Integer;
 
   // rectangles boutons
   btnBlackjackRect, btnRouletteRect, btnSlotsRect, btnQuitRect: TSDL_Rect;
-  textBlackjackRect, textRouletteRect, textSlotsRect, textQuitRect: TSDL_Rect;
+  textRouletteRect, textSlotsRect, textQuitRect: TSDL_Rect;
 
   // textes
-  texteBlackjack: string = 'Blackjack';
-  texteRoulette:  string = 'Roulette';
-  texteSlots:     string = 'Machine à sous';
   texteQuit:      string = 'Quitter';
 
   centerX, startY: Integer;
@@ -81,7 +83,7 @@ begin
 
   // --- Ouvrir une police (modifie le chemin si besoin) ---
   // Note : sur Ubuntu la police DejaVu est souvent disponible à ce chemin
-  font := TTF_OpenFont('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 24);
+  font := TTF_OpenFont('C:\Windows\Fonts\arial.ttf', 24);
   if font = nil then
   begin
     Writeln('Erreur TTF_OpenFont : ', TTF_GetError);
@@ -92,30 +94,128 @@ begin
     SDL_Quit();
     Halt(1);
   end;
+  
+  // --- Ouvre le background image --- 
+  backgroundSurface := IMG_Load('background_casino.png');
+  if backgroundSurface = nil then
+  begin
+    Writeln('Erreur lors du chargement de image :', IMG_GetError);
+    // Nettoyage
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+    Halt(1);
+  end;
+  
+  // --- Chargement du background image ---
+  backgroundTexture := SDL_CreateTextureFromSurface(renderer, backgroundSurface);
+  SDL_FreeSurface(backgroundSurface);
+  
+ // --- Chargement bouton Blackjack ---
+  surf := IMG_Load('blackjack_button.png');
+  if surf = nil then
+  begin
+    Writeln('Erreur chargement blackjack_button.png : ', IMG_GetError);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+    Halt(1);
+  end;
+  btnBlackjackTex := SDL_CreateTextureFromSurface(renderer, surf);
+  SDL_FreeSurface(surf);
+
+  surf := IMG_Load('blackjack_button_hover.png');
+  if surf = nil then
+  begin
+    Writeln('Erreur chargement blackjack_button_hover.png : ', IMG_GetError);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+    Halt(1);
+  end;
+  btnBlackjackHoverTex := SDL_CreateTextureFromSurface(renderer, surf);
+  SDL_FreeSurface(surf);
+  
+   // --- Chargement bouton Roulette ---
+  surf := IMG_Load('roulette_button.png');
+  if surf = nil then
+  begin
+    Writeln('Erreur chargement roulette_button.png : ', IMG_GetError);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+    Halt(1);
+  end;
+  btnRouletteTex := SDL_CreateTextureFromSurface(renderer, surf);
+  SDL_FreeSurface(surf);
+
+  surf := IMG_Load('roulette_button_hover.png');
+  if surf = nil then
+  begin
+    Writeln('Erreur chargement roulette_button_hover.png : ', IMG_GetError);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+    Halt(1);
+  end;
+  btnRouletteHoverTex := SDL_CreateTextureFromSurface(renderer, surf);
+  SDL_FreeSurface(surf);
+  
+   // --- Chargement bouton Machine à sous ---
+  surf := IMG_Load('machine_button.png');
+  if surf = nil then
+  begin
+    Writeln('Erreur chargement machine_button.png : ', IMG_GetError);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+    Halt(1);
+  end;
+  btnMachineTex := SDL_CreateTextureFromSurface(renderer, surf);
+  SDL_FreeSurface(surf);
+
+  surf := IMG_Load('machine_button_hover.png');
+  if surf = nil then
+  begin
+    Writeln('Erreur chargement machine_button_hover.png : ', IMG_GetError);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+    Halt(1);
+  end;
+  btnMachineHoverTex := SDL_CreateTextureFromSurface(renderer, surf);
+  SDL_FreeSurface(surf);
 
   // --- Calcul positions centrées ---
-  centerX := (WINDOW_WIDTH - BUTTON_W) div 2;
-  startY := 120;
+  centerX := (WINDOW_WIDTH - (3 * BUTTON_SIZE + 2 * BUTTON_SPACING)) div 2;
+  startY := (WINDOW_HEIGHT - (2 * BUTTON_SIZE + BUTTON_SPACING)) div 2;
 
   btnBlackjackRect.x := centerX;
   btnBlackjackRect.y := startY;
-  btnBlackjackRect.w := BUTTON_W;
-  btnBlackjackRect.h := BUTTON_H;
+  btnBlackjackRect.w := BUTTON_SIZE;
+  btnBlackjackRect.h := BUTTON_SIZE;
 
-  btnRouletteRect.x := centerX;
-  btnRouletteRect.y := startY + (BUTTON_H + BUTTON_SPACING) * 1;
-  btnRouletteRect.w := BUTTON_W;
-  btnRouletteRect.h := BUTTON_H;
+  btnRouletteRect.x := centerX + BUTTON_SIZE + BUTTON_SPACING;
+  btnRouletteRect.y := startY;
+  btnRouletteRect.w := BUTTON_SIZE;
+  btnRouletteRect.h := BUTTON_SIZE;
 
-  btnSlotsRect.x := centerX;
-  btnSlotsRect.y := startY + (BUTTON_H + BUTTON_SPACING) * 2;
-  btnSlotsRect.w := BUTTON_W;
-  btnSlotsRect.h := BUTTON_H;
+  btnSlotsRect.x := centerX + 2 * (BUTTON_SIZE + BUTTON_SPACING);
+  btnSlotsRect.y := startY;
+  btnSlotsRect.w := BUTTON_SIZE;
+  btnSlotsRect.h := BUTTON_SIZE;
 
-  btnQuitRect.x := centerX;
-  btnQuitRect.y := startY + (BUTTON_H + BUTTON_SPACING) * 3;
-  btnQuitRect.w := BUTTON_W;
-  btnQuitRect.h := BUTTON_H;
+  btnQuitRect.x := centerX + BUTTON_SIZE + BUTTON_SPACING;
+  btnQuitRect.y := startY + BUTTON_SIZE + BUTTON_SPACING;
+  btnQuitRect.w := BUTTON_SIZE;
+  btnQuitRect.h := BUTTON_SIZE;
 
   // couleur texte blanc (utilisée pour tous)
   textColor.r := 255;
@@ -145,7 +245,7 @@ begin
                  (mouseY >= btnBlackjackRect.y) and (mouseY <= btnBlackjackRect.y + btnBlackjackRect.h) then
               begin
                 Writeln('Tu as choisi : Blackjack');
-                // >>> lancer Blackjack ici
+                LancerBlackjack(renderer,font);
               end;
 
               // Roulette
@@ -179,33 +279,29 @@ begin
     // --- Récupérer position souris pour hover (optionnel) ---
     SDL_GetMouseState(@mouseX, @mouseY);
 
-    // --- Dessin ---
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // fond noir
-    SDL_RenderClear(renderer);
-
+	// --- Background ---
+	SDL_RenderCopy(renderer, backgroundTexture, nil, nil);
+	
     // Bouton Blackjack (rouge), met en évidence si hover
     if (mouseX >= btnBlackjackRect.x) and (mouseX <= btnBlackjackRect.x + btnBlackjackRect.w) and
        (mouseY >= btnBlackjackRect.y) and (mouseY <= btnBlackjackRect.y + btnBlackjackRect.h) then
-      SDL_SetRenderDrawColor(renderer, 230, 60, 60, 255) // plus clair quand hover
+      SDL_RenderCopy(renderer, btnBlackjackHoverTex, nil, @btnBlackjackRect)
     else
-      SDL_SetRenderDrawColor(renderer, 200, 0, 0, 255);
-    SDL_RenderFillRect(renderer, @btnBlackjackRect);
+      SDL_RenderCopy(renderer, btnBlackjackTex, nil, @btnBlackjackRect);
 
     // Bouton Roulette (vert)
     if (mouseX >= btnRouletteRect.x) and (mouseX <= btnRouletteRect.x + btnRouletteRect.w) and
        (mouseY >= btnRouletteRect.y) and (mouseY <= btnRouletteRect.y + btnRouletteRect.h) then
-      SDL_SetRenderDrawColor(renderer, 60, 230, 60, 255)
+      SDL_RenderCopy(renderer, btnRouletteHoverTex, nil, @btnRouletteRect)
     else
-      SDL_SetRenderDrawColor(renderer, 0, 180, 0, 255);
-    SDL_RenderFillRect(renderer, @btnRouletteRect);
+      SDL_RenderCopy(renderer, btnRouletteTex, nil, @btnRouletteRect);
 
     // Bouton Machine à sous (bleu)
     if (mouseX >= btnSlotsRect.x) and (mouseX <= btnSlotsRect.x + btnSlotsRect.w) and
        (mouseY >= btnSlotsRect.y) and (mouseY <= btnSlotsRect.y + btnSlotsRect.h) then
-      SDL_SetRenderDrawColor(renderer, 80, 80, 255, 255)
+      SDL_RenderCopy(renderer, btnMachineHoverTex, nil, @btnSlotsRect)
     else
-      SDL_SetRenderDrawColor(renderer, 0, 0, 200, 255);
-    SDL_RenderFillRect(renderer, @btnSlotsRect);
+      SDL_RenderCopy(renderer, btnMachineTex, nil, @btnSlotsRect);
 
     // Bouton Quitter (gris)
     if (mouseX >= btnQuitRect.x) and (mouseX <= btnQuitRect.x + btnQuitRect.w) and
@@ -214,49 +310,6 @@ begin
     else
       SDL_SetRenderDrawColor(renderer, 120, 120, 120, 255);
     SDL_RenderFillRect(renderer, @btnQuitRect);
-
-    // --- Afficher textes (centrés sur chaque bouton) ---
-    // Blackjack
-    textSurface := TTF_RenderText_Blended(font, PChar(AnsiString(texteBlackjack)), textColor);
-    if textSurface <> nil then
-    begin
-      textTexture := SDL_CreateTextureFromSurface(renderer, textSurface);
-      textBlackjackRect.w := textSurface^.w;
-      textBlackjackRect.h := textSurface^.h;
-      textBlackjackRect.x := btnBlackjackRect.x + (btnBlackjackRect.w - textBlackjackRect.w) div 2;
-      textBlackjackRect.y := btnBlackjackRect.y + (btnBlackjackRect.h - textBlackjackRect.h) div 2;
-      SDL_RenderCopy(renderer, textTexture, nil, @textBlackjackRect);
-      SDL_FreeSurface(textSurface);
-      SDL_DestroyTexture(textTexture);
-    end;
-
-    // Roulette
-    textSurface := TTF_RenderText_Blended(font, PChar(AnsiString(texteRoulette)), textColor);
-    if textSurface <> nil then
-    begin
-      textTexture := SDL_CreateTextureFromSurface(renderer, textSurface);
-      textRouletteRect.w := textSurface^.w;
-      textRouletteRect.h := textSurface^.h;
-      textRouletteRect.x := btnRouletteRect.x + (btnRouletteRect.w - textRouletteRect.w) div 2;
-      textRouletteRect.y := btnRouletteRect.y + (btnRouletteRect.h - textRouletteRect.h) div 2;
-      SDL_RenderCopy(renderer, textTexture, nil, @textRouletteRect);
-      SDL_FreeSurface(textSurface);
-      SDL_DestroyTexture(textTexture);
-    end;
-
-    // Machine à sous
-    textSurface := TTF_RenderText_Blended(font, PChar(AnsiString(texteSlots)), textColor);
-    if textSurface <> nil then
-    begin
-      textTexture := SDL_CreateTextureFromSurface(renderer, textSurface);
-      textSlotsRect.w := textSurface^.w;
-      textSlotsRect.h := textSurface^.h;
-      textSlotsRect.x := btnSlotsRect.x + (btnSlotsRect.w - textSlotsRect.w) div 2;
-      textSlotsRect.y := btnSlotsRect.y + (btnSlotsRect.h - textSlotsRect.h) div 2;
-      SDL_RenderCopy(renderer, textTexture, nil, @textSlotsRect);
-      SDL_FreeSurface(textSurface);
-      SDL_DestroyTexture(textTexture);
-    end;
 
     // Quitter
     textSurface := TTF_RenderText_Blended(font, PChar(AnsiString(texteQuit)), textColor);
@@ -283,7 +336,9 @@ begin
   TTF_CloseFont(font);
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
-
+  SDL_DestroyTexture(backgroundTexture);
+  SDL_DestroyTexture(btnBlackjackTex);
+	
   TTF_Quit();
   SDL_Quit();
 end.+
